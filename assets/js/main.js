@@ -736,6 +736,7 @@ if (!state.trash.credits) state.trash.credits = defaultState.trash.credits;
 
 let editingId = null; // Track product being edited
 let restockingId = null; // Track product being restocked
+let sellPriceManuallySet = false; // [BUG-2 FIXED] Was referenced but never declared — caused implicit global corruption
 
 function saveState() {
     localStorage.setItem('animal_land_db', JSON.stringify(state));
@@ -838,17 +839,8 @@ window.addEventListener('beforeinstallprompt', (e) => {
     installBtn.style.display = 'flex';
 });
 
-function handleUnitChange() {
-    const unit = document.getElementById('p-unit').value;
-    const sizeLabel = document.querySelector('label[for="p-size"]');
-    const kgPriceContainer = document.getElementById('kg-price-container');
-
-    if (unit === 'pcs') {
-        kgPriceContainer.style.display = 'none';
-    } else {
-        kgPriceContainer.style.display = 'block';
-    }
-}
+// [BUG-1 FIXED] Removed duplicate/incomplete handleUnitChange definition.
+// The correct full definition is below (~line 877) and handles both size-input-container and kg-price-container.
 
 installBtn.addEventListener('click', () => {
     if (!deferredPrompt) {
@@ -1656,6 +1648,17 @@ function deleteSale(id) {
             const product = state.products.find(p => p.id === sale.productId);
             if (product) {
                 product.qty = AppFinance.stock(product.qty + sale.qty);
+                // [BUG-10 FIXED] Restore FIFO batch integrity on sale delete.
+                // Without this, qty is returned but batches[] stays empty, skewing all future FIFO cost calculations.
+                if (!product.batches) product.batches = [];
+                const unitCostAtSale = (sale.cost && sale.qty > 0) ? AppFinance.safeNum(sale.cost / sale.qty) : (product.unitCost || 0);
+                product.batches.push({
+                    id: Date.now(),
+                    qty: sale.qty,
+                    cost: unitCostAtSale,
+                    sellPrice: product.sellPrice || 0,
+                    date: new Date().toISOString()
+                });
             }
         }
         state.trash.sales.push(state.sales.splice(index, 1)[0]);
@@ -1953,7 +1956,7 @@ document.getElementById('credit-form').addEventListener('submit', (e) => {
         }
     }
 
-    if (product.qty < qty) {
+    if (AppFinance.toInternal(product.qty) < AppFinance.toInternal(qty)) { // [BUG-9 FIXED] Raw float < caused false 'insufficient stock' for kg/g products due to floating-point drift
         const msg = document.documentElement.lang === 'ar'
             ? `❌ خطأ: المخزون لا يكفي للدين!\nالكمية المتاحة: ${Math.round(product.qty)} ${product.unit}`
             : `❌ Error: Not enough stock for this credit!\nAvailable: ${Math.round(product.qty)} ${product.unit}`;
@@ -2017,7 +2020,7 @@ function deleteCredit(id) {
     }
 }
 
-function payCredit(id) {
+async function payCredit(id) { // [BUG-4 FIXED] Made async — confirm() is blocked in PWA standalone mode
     const credit = state.credits.find(c => c.id === id);
     if (!credit) return;
 
@@ -2026,7 +2029,7 @@ function payCredit(id) {
         ? `هل أنت متأكد من استلام مبلغ (${credit.total} دينار) من ${credit.customerName}؟`
         : `Are you sure you received (${credit.total} DA) from ${credit.customerName}?`;
 
-    if (confirm(msg)) {
+    if (await customConfirm(msg)) { // [BUG-4 FIXED] Replaced confirm() with customConfirm()
         const paymentDate = new Date().toLocaleDateString();
 
         const saleObj = {
@@ -2121,8 +2124,8 @@ function permanentDelete(type, id) {
     saveState();
 }
 
-function emptyTrash(category) {
-    if (confirm('Are you sure you want to permanently delete these items?')) {
+async function emptyTrash(category) { // [BUG-5 FIXED] Made async — confirm() is blocked in PWA standalone mode
+    if (await customConfirm('Are you sure you want to permanently delete these items?')) { // [BUG-5 FIXED]
         if (category === 'products') {
             state.trash.products = [];
         } else {
@@ -2215,7 +2218,7 @@ function renderAll() {
         }
 
         const sD = parseDateSafety(s.date);
-        if (!isNaN(sD) && sD.getMonth() === now.getMonth() && sD.getFullYear() === now.getFullYear()) {
+        if (isFinite(sD) && sD.getMonth() === now.getMonth() && sD.getFullYear() === now.getFullYear()) { // [BUG-17 FIXED] isNaN(Date) is unreliable — isFinite() correctly detects Invalid Date
             monthRevenue = AppFinance.round(monthRevenue + s.total);
             monthProfit = AppFinance.round(monthProfit + profit);
         }
@@ -2231,7 +2234,7 @@ function renderAll() {
         }
 
         const eD = parseDateSafety(e.date);
-        if (!isNaN(eD) && eD.getMonth() === now.getMonth() && eD.getFullYear() === now.getFullYear()) {
+        if (isFinite(eD) && eD.getMonth() === now.getMonth() && eD.getFullYear() === now.getFullYear()) { // [BUG-17 FIXED]
             monthExp += e.amount;
             monthProfit -= e.amount;
         }
@@ -2487,8 +2490,8 @@ function renderAll() {
     const sSearchInput = document.getElementById('s-product-filter');
     const savedValue = sSelect.value;
 
-    // Clear search filter when rendering to avoid confusion with new items
-    if (sSearchInput) sSearchInput.value = '';
+    // [BUG-15 FIXED] Removed search filter clear — it was wiping the user's mid-search query on every save/render.
+    // The dropdown rebuild below already reads the current sSearchInput value correctly without needing a reset.
 
     // Sort products by name alphabetically
     const sortedProducts = [...state.products].sort((a, b) => a.name.localeCompare(b.name));
@@ -2569,14 +2572,16 @@ function updateFinancialReports(getUnitCost) {
 
     // Group Sales
     state.sales.forEach(s => {
-        const d = new Date(s.date);
-        if (isNaN(d)) return;
+        const d = parseDateSafety(s.date); // [BUG-8 FIXED] new Date(locale-string) returns Invalid Date on non-US locales
+        if (isNaN(d.getTime())) return; // [BUG-8 FIXED] isNaN(Date) is unreliable — use .getTime()
 
         const dayKey = s.date;
         const monthKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
         const yearKey = `${d.getFullYear()}`;
 
-        const margin = s.total - (s.qty * getUnitCost(s));
+        // [BUG-7 FIXED] Was using current WAC (getUnitCost) for ALL historical sales.
+        // For FIFO products, s.cost holds the exact cost recorded at time of sale — use it.
+        const margin = (s.cost !== undefined) ? s.total - s.cost : s.total - (s.qty * getUnitCost(s));
 
         if (!dailyMap[dayKey]) dailyMap[dayKey] = { rev: 0, profit: 0 };
         dailyMap[dayKey].rev += s.total;
@@ -2593,8 +2598,8 @@ function updateFinancialReports(getUnitCost) {
 
     // Subtract Expenses
     state.expenses.forEach(e => {
-        const d = new Date(e.date);
-        if (isNaN(d)) return;
+        const d = parseDateSafety(e.date); // [BUG-8 FIXED] Locale-safe date parsing
+        if (isNaN(d.getTime())) return; // [BUG-8 FIXED]
 
         const dayKey = e.date;
         const monthKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
@@ -2645,10 +2650,19 @@ function updateAnalytics() {
         }
     });
 
+    // [PERF-1 FIXED] Pre-build a qty-sold lookup map to avoid O(n*m) nested filter+reduce.
+    // Before: 50 products × 1000 sales = 50,000 iterations on every render.
+    // After: one linear pass to build the map, then O(1) lookups per product.
+    const allSalesForAnalytics = state.sales.concat(state.trash.sales);
+    const soldQtyByProductId = {};
+    allSalesForAnalytics.forEach(s => {
+        soldQtyByProductId[s.productId] = (soldQtyByProductId[s.productId] || 0) + s.qty;
+    });
+
     state.products.concat(state.trash.products).forEach(p => {
-        const salesForThisProd = state.sales.concat(state.trash.sales).filter(s => s.productId === p.id).reduce((sum, s) => sum + s.qty, 0);
+        const salesForThisProd = soldQtyByProductId[p.id] || 0;
         const actualInitialQty = p.initialQty || (p.qty + salesForThisProd);
-        
+
         aggregates[p.name].stock += p.qty;
         aggregates[p.name].totalInvestment += (p.totalCost || 0);
         aggregates[p.name].totalInitialQty += actualInitialQty;
@@ -2724,7 +2738,18 @@ function updateChart() {
     const gridColor = getComputedStyle(document.documentElement).getPropertyValue('--chart-grid').trim();
     const textColor = getComputedStyle(document.documentElement).getPropertyValue('--chart-text').trim();
 
-    if (myChart) myChart.destroy();
+    // [BUG-12 FIXED] Update chart data in-place instead of destroy()+recreate on every renderAll().
+    // destroy() caused visible canvas flicker and wasted GPU resources on every save/edit.
+    if (myChart) {
+        myChart.data.labels = last7Days.map(d => d.split('/')[0] + '/' + d.split('/')[1]);
+        myChart.data.datasets[0].data = dailyProfit;
+        myChart.data.datasets[0].backgroundColor = isDark ? 'rgba(13, 148, 136, 0.3)' : 'rgba(13, 148, 136, 0.1)';
+        myChart.options.scales.y.grid.color = gridColor;
+        myChart.options.scales.y.ticks.color = textColor;
+        myChart.options.scales.x.ticks.color = textColor;
+        myChart.update('none'); // 'none' = skip animation for instant silent update
+        return;
+    }
     myChart = new Chart(ctx, {
         type: 'line',
         data: {
@@ -3422,7 +3447,7 @@ async function handlePosScan(code) {
         if (await customConfirm(lang === 'ar' ? `❌ السلعة غير مسجلة!\nهل تريد إضافة منتج جديد باسم (${code})؟` : `❌ Product not found!\nDo you want to add a new product for (${code})?`)) {
             document.getElementById('pos-barcode-input').value = '';
             switchView('inventory', document.querySelectorAll('.nav-item')[1]);
-            document.getElementById('p-barcode').value = code;
+            document.getElementById('p-barcode-main').value = code; // [BUG-6 FIXED] #p-barcode does not exist \u2014 correct ID is p-barcode-main
             window.scrollTo({ top: document.getElementById('product-form').offsetTop, behavior: 'smooth' });
         }
         document.getElementById('pos-barcode-input').value = '';
@@ -3668,7 +3693,7 @@ async function posCheckout() {
         totalSale += saleResult.revenue;
 
         state.sales.push({
-            id: Date.now() + Math.random(),
+            id: Date.now() + Math.floor(Math.random() * 10000), // [BUG-3 FIXED] Float IDs fail === lookup after JSON roundtrip — delete/return was broken for POS sales
             productId: product.id,
             productName: product.name,
             qty: actualQty,
