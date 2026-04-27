@@ -752,14 +752,37 @@ if (state.trash && state.trash.products) {
 if (!state.trash) state.trash = defaultState.trash;
 if (!state.credits) state.credits = defaultState.credits;
 if (!state.trash.credits) state.trash.credits = defaultState.trash.credits;
+autoRepairState(state); // [ARCH] Boot-time derived-state repair — fixes qty/batch mismatches on load
 
 let editingId = null; // Track product being edited
 let restockingId = null; // Track product being restocked
 let sellPriceManuallySet = false; // [BUG-2 FIXED] Was referenced but never declared — caused implicit global corruption
 
+let _stateSnapshot = null; // [ARCH] Rollback checkpoint — updated after every successful save
+
 function saveState() {
-    // [FIX-3 FINAL] Serialize a stripped copy — product images live in separate keys (animal_land_img_${id})
-    // This prevents the main DB JSON from bloating and hitting the 5MB localStorage limit at scale.
+    // [ARCH] Derive all product qtys from batches before validating — enforces derived-state model
+    if (state.products) state.products.forEach(p => syncProductState(p));
+
+    // [ARCH] Hard validation guard — attempt auto-repair, block save if irrecoverable
+    let errors = validateState(state);
+    if (errors.length > 0) {
+        autoRepairState(state);
+        errors = validateState(state);
+        if (errors.length > 0) {
+            console.error('[SAVE BLOCKED]', errors);
+            if (_stateSnapshot) {
+                Object.assign(state, JSON.parse(_stateSnapshot));
+                customAlert('⚠️ خطأ في البيانات: تم استعادة آخر حالة سليمة تلقائياً.');
+            } else {
+                customAlert('⚠️ خطأ في البيانات: لم يتم الحفظ. يرجى التحقق من المدخلات.');
+            }
+            renderAll();
+            return;
+        }
+    }
+
+    // [FIX-3 FINAL] Strip product images — they live in separate animal_land_img_${id} keys
     const stateToSave = {
         ...state,
         products: state.products.map(p => {
@@ -768,6 +791,7 @@ function saveState() {
         })
     };
     localStorage.setItem('animal_land_db', JSON.stringify(stateToSave));
+    _stateSnapshot = JSON.stringify(state); // Update rollback checkpoint
     renderAll();
 }
 
@@ -1062,6 +1086,187 @@ const StorageManager = {
     }
 };
 
+// ════════════════════════════════════════════════════════════════════════
+//  ARCHITECTURE LAYER — Self-Enforcing Financial Engine
+//  Phases A–D: Derived State · Validation · Transaction · Event Bus
+//  All functions use `function` declarations so they hoist above saveState().
+// ════════════════════════════════════════════════════════════════════════
+
+// ── LAYER 1: DERIVED STATE ───────────────────────────────────────────────
+
+/** Authoritative stock: always sum of active batches. Never read product.qty directly. */
+function getProductQty(product) {
+    if (!product.batches || product.batches.length === 0) return 0;
+    return AppFinance.stock(product.batches.reduce((sum, b) => sum + (b.qty || 0), 0));
+}
+
+/** Sync product.qty from batches[]. Overwrites stored value with derived truth. */
+function syncProductState(product) {
+    if (!product) return product;
+    const derived = getProductQty(product);
+    if (Math.abs((product.qty || 0) - derived) > 0.001) {
+        console.warn(`[SYNC] "${product.name}": stored=${product.qty} derived=${derived}. Corrected.`);
+        product.qty = derived;
+    }
+    return product;
+}
+
+/** Boot-time repair: fixes recoverable state issues silently. Pure data — no UI calls. */
+function autoRepairState(s) {
+    if (!s || !Array.isArray(s.products)) return s;
+    let repaired = 0;
+    s.products.forEach(p => {
+        if (!p.batches || p.batches.length === 0) {
+            p.batches = [{ id: Date.now() - 2000, qty: p.qty || 0, cost: p.unitCost || 0, sellPrice: p.sellPrice || 0, date: new Date().toISOString() }];
+            repaired++;
+        }
+        const before = p.batches.length;
+        p.batches = p.batches.filter(b => b.qty > 0 && !isNaN(b.qty) && !isNaN(b.cost));
+        if (p.batches.length < before) repaired++;
+        const derived = getProductQty(p);
+        if (Math.abs((p.qty || 0) - derived) > 0.001) { p.qty = derived; repaired++; }
+        if (isNaN(p.unitCost)) { p.unitCost = 0; repaired++; }
+        if (isNaN(p.sellPrice)) { p.sellPrice = 0; repaired++; }
+    });
+    (s.sales || []).forEach(sale => {
+        if (isNaN(sale.cost)) { sale.cost = 0; repaired++; }
+        if (isNaN(sale.total)) { sale.total = 0; repaired++; }
+    });
+    if (repaired > 0) console.info(`[AUTO-REPAIR] Boot: corrected ${repaired} inconsistencies.`);
+    return s;
+}
+
+// ── LAYER 2: VALIDATION ENGINE ───────────────────────────────────────────
+
+/** Hard guard before every persist. Returns [] if valid, else error strings. Pure function. */
+function validateState(s) {
+    const errors = [];
+    if (!s.products || !Array.isArray(s.products)) { errors.push('CRITICAL: products missing'); return errors; }
+    s.products.forEach(p => {
+        const id = `Product[${p.id}|"${p.name}"]`;
+        const derived = getProductQty(p);
+        if (Math.abs((p.qty || 0) - derived) > 0.001) errors.push(`${id}: qty(${p.qty}) ≠ batches(${derived})`);
+        if ((p.qty || 0) < -0.001) errors.push(`${id}: negative stock`);
+        if (isNaN(p.unitCost) || isNaN(p.sellPrice)) errors.push(`${id}: NaN in financial fields`);
+        (p.batches || []).forEach((b, i) => {
+            if (isNaN(b.qty) || b.qty < 0) errors.push(`${id}: batch[${i}] invalid qty`);
+            if (isNaN(b.cost) || b.cost < 0) errors.push(`${id}: batch[${i}] invalid cost`);
+        });
+    });
+    (s.sales || []).forEach(sale => {
+        if (isNaN(sale.total) || isNaN(sale.qty)) errors.push(`Sale[${sale.id}]: NaN in total/qty`);
+    });
+    return errors;
+}
+
+// ── LAYER 3: TRANSACTION SYSTEM ──────────────────────────────────────────
+
+/**
+ * Atomic transaction wrapper for new domain code.
+ * Clones state → runs fn → saves. Rolls back on any error.
+ * Existing functions get validation automatically via the upgraded saveState().
+ */
+function transaction(fn) {
+    const snapshot = JSON.stringify(state);
+    try {
+        fn(state);
+        saveState();
+        return true;
+    } catch (err) {
+        console.error('[TRANSACTION ROLLBACK]', err.message);
+        Object.assign(state, JSON.parse(snapshot));
+        customAlert('⚠️ تم إلغاء العملية تلقائياً: ' + err.message);
+        renderAll();
+        return false;
+    }
+}
+
+// ── LAYER 4: EVENT BUS ───────────────────────────────────────────────────
+
+const EventBus = {
+    _h: {},
+    on(e, fn) { (this._h[e] = this._h[e] || []).push(fn); },
+    off(e, fn) { if (this._h[e]) this._h[e] = this._h[e].filter(h => h !== fn); },
+    emit(e, d) { (this._h[e] || []).forEach(h => h(d)); (this._h['*'] || []).forEach(h => h(e, d)); }
+};
+function emit(event, payload) { EventBus.emit(event, payload); }
+
+// ── LAYER 5: DERIVED FINANCIAL ENGINE ────────────────────────────────────
+
+const Finance = {
+    /** Profit uses recorded FIFO cost always — never WAC. RC-1 impossible here. */
+    getSaleProfit: (sale) => AppFinance.round(sale.total - (sale.cost || 0)),
+
+    getCreditProfit: (credit) => {
+        if (credit.cost !== undefined) return AppFinance.round(credit.total - credit.cost);
+        console.warn(`[Finance] Credit[${credit.id}] missing cost — legacy WAC fallback`);
+        const p = state.products.find(p => p.id === credit.productId)
+               || state.trash.products.find(p => p.id === credit.productId);
+        return AppFinance.round(credit.total - (credit.qty * (p?.unitCost || 0)));
+    },
+
+    getNetProfit: (sales, expenses) => {
+        const rev = sales.reduce((s, x) => s + x.total, 0);
+        const cost = sales.reduce((s, x) => s + (x.cost || 0), 0);
+        const exp = (expenses || []).reduce((s, e) => s + (e.amount || 0), 0);
+        return AppFinance.round(rev - cost - exp);
+    },
+
+    getStockValue: (product) => Math.round(
+        (product.batches || []).reduce((s, b) => s + b.qty * (b.cost || 0), 0)
+    )
+};
+
+// ── LAYER 6: DOMAIN ENGINE ───────────────────────────────────────────────
+
+const Domain = {
+    /** Deduct stock FIFO. Returns total cost of deducted units. */
+    _deductBatches(product, qty) {
+        let rem = AppFinance.toInternal(qty), cost = 0;
+        for (const b of product.batches) {
+            if (rem <= 0) break;
+            const bInt = AppFinance.toInternal(b.qty);
+            const take = Math.min(bInt, rem);
+            cost += AppFinance.toExternal(take) * (b.cost || 0);
+            b.qty = AppFinance.stock(AppFinance.toExternal(bInt - take));
+            rem -= take;
+        }
+        product.batches = product.batches.filter(b => b.qty > 0);
+        return Math.round(cost);
+    },
+
+    /** Restore a batch after delete/return using recorded per-unit cost. */
+    _restoreBatch(product, qty, saleCost, saleTotalQty) {
+        if (!product.batches) product.batches = [];
+        const unitCost = (saleCost && saleTotalQty > 0)
+            ? AppFinance.safeNum(saleCost / saleTotalQty) : (product.unitCost || 0);
+        product.batches.push({ id: Date.now(), qty, cost: unitCost, sellPrice: product.sellPrice || 0, date: new Date().toISOString() });
+    },
+
+    /** Adjust latest batch qty for manual product edits. RC-2 impossible via this path. */
+    _adjustLatestBatch(product, diff) {
+        if (!product.batches) product.batches = [];
+        if (diff > 0) {
+            if (product.batches.length > 0) {
+                product.batches[product.batches.length - 1].qty = AppFinance.stock(product.batches[product.batches.length - 1].qty + diff);
+            } else {
+                product.batches.push({ id: Date.now(), qty: diff, cost: product.unitCost || 0, sellPrice: product.sellPrice || 0, date: new Date().toISOString() });
+            }
+        } else if (diff < 0) {
+            let rem = Math.abs(diff);
+            for (let i = product.batches.length - 1; i >= 0 && rem > 0.001; i--) {
+                const b = product.batches[i];
+                if (b.qty > rem) { b.qty = AppFinance.stock(b.qty - rem); rem = 0; }
+                else { rem = AppFinance.stock(rem - b.qty); b.qty = 0; }
+            }
+            product.batches = product.batches.filter(b => b.qty > 0);
+        }
+        syncProductState(product);
+    }
+};
+
+// ── END ARCHITECTURE LAYER ───────────────────────────────────────────────
+
 // --- Core Functions ---
 
 // Products
@@ -1214,8 +1419,52 @@ function saveProductEdit(id, btn) {
     if (newUnit === 'pcs') newSize = 1;
 
     if (newName && !isNaN(newSellPrice) && !isNaN(rawQty)) {
+        const newQty = AppFinance.stock(rawQty);
+
+        // [RC-2 FIXED] Synchronize FIFO batches when qty is manually edited
+        if (!product.batches) product.batches = [];
+        let currentBatchQty = product.batches.reduce((sum, b) => sum + b.qty, 0);
+        let qtyDiff = newQty - currentBatchQty;
+        
+        if (qtyDiff > 0) {
+            if (product.batches.length > 0) {
+                product.batches[product.batches.length - 1].qty = AppFinance.stock(product.batches[product.batches.length - 1].qty + qtyDiff);
+            } else {
+                product.batches.push({
+                    id: Date.now(),
+                    qty: qtyDiff,
+                    cost: product.unitCost || 0,
+                    sellPrice: AppFinance.round(newSellPrice),
+                    date: new Date().toISOString()
+                });
+            }
+        } else if (qtyDiff < 0) {
+            let toRemove = Math.abs(qtyDiff);
+            for (let i = product.batches.length - 1; i >= 0 && toRemove > 0; i--) {
+                if (product.batches[i].qty > toRemove) {
+                    product.batches[i].qty = AppFinance.stock(product.batches[i].qty - toRemove);
+                    toRemove = 0;
+                } else {
+                    toRemove = AppFinance.stock(toRemove - product.batches[i].qty);
+                    product.batches[i].qty = 0;
+                }
+            }
+            product.batches = product.batches.filter(b => b.qty > 0);
+            
+            // Fallback if newQty > 0 but all batches were cleared
+            if (newQty > 0 && product.batches.length === 0) {
+                product.batches.push({
+                    id: Date.now(),
+                    qty: newQty,
+                    cost: product.unitCost || 0,
+                    sellPrice: AppFinance.round(newSellPrice),
+                    date: new Date().toISOString()
+                });
+            }
+        }
+
         product.name = newName;
-        product.qty = AppFinance.stock(rawQty); // Professional snapping
+        product.qty = newQty; // Professional snapping
         product.itemSize = newSize;
         product.sellPrice = AppFinance.round(newSellPrice);
         product.unit = newUnit;
@@ -1265,7 +1514,7 @@ function saveMobileRestock(id) {
 
 async function _applyRestock(product, newBags, newCost, newSellPrice, newPromoQty = 0, newPromoPrice = 0) {
     if (isNaN(newBags) || newBags <= 0 || isNaN(newCost) || newCost < 0) {
-        alert('Please enter valid values.');
+        await customAlert('الرجاء إدخال قيم صحيحة. / Please enter valid values.'); // [FIX-2]
         return;
     }
     const addedQty = newBags * (product.itemSize || 1);
@@ -1283,7 +1532,8 @@ async function _applyRestock(product, newBags, newCost, newSellPrice, newPromoQt
         date: new Date().toISOString()
     });
 
-    product.qty = AppFinance.stock(product.qty + addedQty);
+    // [ARCH] Derive qty from batches — never manual addition
+    syncProductState(product);
     product.initialQty = (product.initialQty || 0) + addedQty;
     product.totalCost = (product.totalCost || 0) + newCost;
     product.unitCost = product.totalCost / product.initialQty;
@@ -1341,8 +1591,7 @@ function sellFIFO(product, qtyInput, revenueOnly = false) {
         }
 
         if (!revenueOnly) {
-            const currentInternalQty = AppFinance.toInternal(product.qty);
-            product.qty = AppFinance.toExternal(currentInternalQty - internalQtyToSell);
+            syncProductState(product); // [ARCH] Derive qty from batches — never manual subtraction
         }
         return { revenue, cost: Math.round(AppFinance.toExternal(internalQtyToSell) * bCost) };
     }
@@ -1398,8 +1647,7 @@ function sellFIFO(product, qtyInput, revenueOnly = false) {
 
     if (!revenueOnly) {
         product.batches = product.batches.filter(b => AppFinance.toInternal(b.qty) > 0);
-        const currentInternalQty = AppFinance.toInternal(product.qty);
-        product.qty = AppFinance.toExternal(currentInternalQty - internalQtyToSell);
+        syncProductState(product); // [ARCH] Derive qty from batches — never manual subtraction
     }
 
     return { revenue: Math.round(totalRevenue), cost: Math.round(totalCost) };
@@ -1556,7 +1804,7 @@ document.getElementById('sale-form').addEventListener('submit', (e) => {
         displayDate = new Date(+y, +m - 1, +d).toLocaleDateString();
     }
 
-    if (!val) return alert('الرجاء اختيار منتج');
+    if (!val) { customAlert('الرجاء اختيار منتج'); return; } // [FIX-2 + ARCH]
 
     let saleObj;
 
@@ -1613,7 +1861,7 @@ document.getElementById('sale-form').addEventListener('submit', (e) => {
 
             if (!isPast) {
                 if (AppFinance.toInternal(product.qty) < AppFinance.toInternal(qty)) {
-                    return alert(`❌ الكمية المتاحة فقط ${formatQty(product.qty, product.unit)}`);
+                    customAlert(`❌ الكمية المتاحة فقط ${formatQty(product.qty, product.unit)}`); return; // [FIX-2]
                 }
                 // sellFIFO: deducts stock AND returns batch-accurate revenue + cost
                 const result = sellFIFO(product, qty);
@@ -1675,18 +1923,9 @@ function deleteSale(id) {
         if (sale.productId > 0 && !sale.isPast) {
             const product = state.products.find(p => p.id === sale.productId);
             if (product) {
-                product.qty = AppFinance.stock(product.qty + sale.qty);
-                // [BUG-10 FIXED] Restore FIFO batch integrity on sale delete.
-                // Without this, qty is returned but batches[] stays empty, skewing all future FIFO cost calculations.
-                if (!product.batches) product.batches = [];
-                const unitCostAtSale = (sale.cost && sale.qty > 0) ? AppFinance.safeNum(sale.cost / sale.qty) : (product.unitCost || 0);
-                product.batches.push({
-                    id: Date.now(),
-                    qty: sale.qty,
-                    cost: unitCostAtSale,
-                    sellPrice: product.sellPrice || 0,
-                    date: new Date().toISOString()
-                });
+                // [ARCH] Restore batch via Domain helper, then derive qty
+                Domain._restoreBatch(product, sale.qty, sale.cost, sale.qty);
+                syncProductState(product);
             }
         }
         state.trash.sales.push(state.sales.splice(index, 1)[0]);
@@ -1709,22 +1948,9 @@ async function returnSale(id) {
     if (sale.productId > 0 && !sale.isPast) {
         const product = state.products.find(p => p.id === sale.productId);
         if (product) {
-            product.qty = AppFinance.stock(product.qty + qToReturn);
-            // [FIX-1 FINAL] Restore FIFO batch integrity on sale return.
-            // returnSale() was missing the same fix applied to deleteSale() in Phase 2.
-            // Without this, qty returns correctly but batches[] stays depleted,
-            // skewing all future FIFO cost calculations silently.
-            if (!product.batches) product.batches = [];
-            const unitCostAtReturn = (sale.cost && sale.qty > 0)
-                ? AppFinance.safeNum(sale.cost / sale.qty)
-                : (product.unitCost || 0);
-            product.batches.push({
-                id: Date.now(),
-                qty: qToReturn,
-                cost: unitCostAtReturn,
-                sellPrice: product.sellPrice || 0,
-                date: new Date().toISOString()
-            });
+            // [ARCH] Restore batch via Domain helper, then derive qty
+            Domain._restoreBatch(product, qToReturn, sale.cost, sale.qty);
+            syncProductState(product);
         }
     }
 
@@ -1776,7 +2002,9 @@ async function returnCredit(id) {
     if (!credit.isPast) {
         const product = state.products.find(p => p.id === credit.productId);
         if (product) {
-            product.qty = AppFinance.stock(product.qty + qToReturn);
+            // [ARCH] Restore batch + derive qty from batches
+            Domain._restoreBatch(product, qToReturn, credit.cost, credit.qty);
+            syncProductState(product);
         }
     }
 
@@ -2054,7 +2282,9 @@ function deleteCredit(id) {
         if (!credit.isPast) {
             const product = state.products.find(p => p.id === credit.productId);
             if (product) {
-                product.qty = AppFinance.stock(product.qty + credit.qty);
+                // [ARCH] Restore batch + derive qty from batches
+                Domain._restoreBatch(product, credit.qty, credit.cost, credit.qty);
+                syncProductState(product);
             }
         }
         state.trash.credits.push(state.credits.splice(index, 1)[0]);
@@ -2121,7 +2351,8 @@ function renderCredits() {
 
     const filteredCredits = state.credits.filter(c => {
         totalUnpaid += c.total;
-        const margin = c.total - (c.qty * getUnitCost(c));
+        // [RC-1 FIXED] Use recorded FIFO cost if available, otherwise fallback to WAC
+        const margin = (c.cost !== undefined) ? c.total - c.cost : c.total - (c.qty * getUnitCost(c));
         expectedProfit += margin;
 
         if (!searchQuery) return true;
