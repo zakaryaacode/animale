@@ -689,6 +689,25 @@ let defaultState = {
 };
 let state = JSON.parse(localStorage.getItem('animal_land_db')) || defaultState;
 
+// [FIX-3 FINAL] Startup image migration: move any product images stored in the main DB
+// into isolated localStorage keys (animal_land_img_${id}) to keep the main DB key lean.
+// This runs once — subsequent saves will no longer include images in animal_land_db.
+(function migrateProductImages() {
+    if (!state.products) return;
+    state.products.forEach(p => {
+        if (p.image) {
+            // Write to separate key only if not already migrated
+            if (!localStorage.getItem('animal_land_img_' + p.id)) {
+                localStorage.setItem('animal_land_img_' + p.id, p.image);
+            }
+            delete p.image; // Remove from in-memory state — saveState() will not re-add it
+        }
+        // Load image from separate key back into memory for rendering this session
+        const sep = localStorage.getItem('animal_land_img_' + p.id);
+        if (sep) p.image = sep;
+    });
+})();
+
 // FIFO Data Migration: Ensure all products have a batches array with sellPrice
 if (state.products) {
     state.products.forEach(p => {
@@ -739,7 +758,16 @@ let restockingId = null; // Track product being restocked
 let sellPriceManuallySet = false; // [BUG-2 FIXED] Was referenced but never declared — caused implicit global corruption
 
 function saveState() {
-    localStorage.setItem('animal_land_db', JSON.stringify(state));
+    // [FIX-3 FINAL] Serialize a stripped copy — product images live in separate keys (animal_land_img_${id})
+    // This prevents the main DB JSON from bloating and hitting the 5MB localStorage limit at scale.
+    const stateToSave = {
+        ...state,
+        products: state.products.map(p => {
+            const { image, ...rest } = p; // eslint-disable-line no-unused-vars
+            return rest;
+        })
+    };
+    localStorage.setItem('animal_land_db', JSON.stringify(stateToSave));
     renderAll();
 }
 
@@ -842,12 +870,12 @@ window.addEventListener('beforeinstallprompt', (e) => {
 // [BUG-1 FIXED] Removed duplicate/incomplete handleUnitChange definition.
 // The correct full definition is below (~line 877) and handles both size-input-container and kg-price-container.
 
-installBtn.addEventListener('click', () => {
+installBtn.addEventListener('click', async () => { // [FIX-2 FINAL] Made async for customAlert()
     if (!deferredPrompt) {
         if (window.location.protocol !== 'https:' && window.location.hostname !== 'localhost') {
-            alert("⚠️ ميزة التثبيت تحتاج إلى رابط HTTPS آمن لكي تعمل. \n PWA Installation requires a secure HTTPS connection.");
+            await customAlert("⚠️ ميزة التثبيت تحتاج إلى رابط HTTPS آمن لكي تعمل. \n PWA Installation requires a secure HTTPS connection."); // [FIX-2]
         } else {
-            alert("التطبيق مثبت بالفعل أو أن متصفحك لا يدعم هذه الميزة حالياً. \n App already installed or browser not supported.");
+            await customAlert("التطبيق مثبت بالفعل أو أن متصفحك لا يدعم هذه الميزة حالياً. \n App already installed or browser not supported."); // [FIX-2]
         }
         return;
     }
@@ -1539,9 +1567,9 @@ document.getElementById('sale-form').addEventListener('submit', (e) => {
         const unitPrice = parseFloat(document.getElementById('s-custom-price').value) || 0;
         const qty = parseFloat(document.getElementById('s-qty').value) || 0;
 
-        if (!name) return alert('الرجاء إدخال اسم المنتج');
-        if (unitPrice <= 0) return alert('الرجاء إدخال سعر صحيح');
-        if (qty <= 0) return alert('الرجاء إدخال كمية صحيحة');
+        if (!name) { customAlert('الرجاء إدخال اسم المنتج'); return; } // [FIX-2]
+        if (unitPrice <= 0) { customAlert('الرجاء إدخال سعر صحيح'); return; } // [FIX-2]
+        if (qty <= 0) { customAlert('الرجاء إدخال كمية صحيحة'); return; } // [FIX-2]
 
         const total = AppFinance.round(qty * unitPrice);
 
@@ -1555,7 +1583,7 @@ document.getElementById('sale-form').addEventListener('submit', (e) => {
         // ---- REGULAR INVENTORY PRODUCT ----
     } else {
         const product = state.products.find(p => p.id === parseInt(val));
-        if (!product) return alert('منتج غير موجود');
+        if (!product) { customAlert('منتج غير موجود'); return; } // [FIX-2]
 
         const bagPrice = product.sellPrice || 0;
         const unitPrice = bagPrice / (product.itemSize || 1);
@@ -1608,8 +1636,8 @@ document.getElementById('sale-form').addEventListener('submit', (e) => {
             }
         }
 
-        if (qty <= 0) return alert('الرجاء إدخال كمية صحيحة');
-        if (total <= 0) return alert('السعر = 0، راجع المنتج');
+        if (qty <= 0) { customAlert('الرجاء إدخال كمية صحيحة'); return; } // [FIX-2]
+        if (total <= 0) { customAlert('السعر = 0، راجع المنتج'); return; } // [FIX-2]
 
         saleObj = {
             id: Date.now(), productId: product.id,
@@ -1682,6 +1710,21 @@ async function returnSale(id) {
         const product = state.products.find(p => p.id === sale.productId);
         if (product) {
             product.qty = AppFinance.stock(product.qty + qToReturn);
+            // [FIX-1 FINAL] Restore FIFO batch integrity on sale return.
+            // returnSale() was missing the same fix applied to deleteSale() in Phase 2.
+            // Without this, qty returns correctly but batches[] stays depleted,
+            // skewing all future FIFO cost calculations silently.
+            if (!product.batches) product.batches = [];
+            const unitCostAtReturn = (sale.cost && sale.qty > 0)
+                ? AppFinance.safeNum(sale.cost / sale.qty)
+                : (product.unitCost || 0);
+            product.batches.push({
+                id: Date.now(),
+                qty: qToReturn,
+                cost: unitCostAtReturn,
+                sellPrice: product.sellPrice || 0,
+                date: new Date().toISOString()
+            });
         }
     }
 
@@ -1960,8 +2003,7 @@ document.getElementById('credit-form').addEventListener('submit', (e) => {
         const msg = document.documentElement.lang === 'ar'
             ? `❌ خطأ: المخزون لا يكفي للدين!\nالكمية المتاحة: ${Math.round(product.qty)} ${product.unit}`
             : `❌ Error: Not enough stock for this credit!\nAvailable: ${Math.round(product.qty)} ${product.unit}`;
-        alert(msg);
-        return;
+        customAlert(msg); return; // [FIX-2] alert() is silently blocked in PWA standalone on iOS
     }
 
     const customerName = document.getElementById('cr-customer').value.trim();
@@ -3561,7 +3603,7 @@ function changePosQty(productId, delta) {
     const prosMathQty = product.unit === 'pcs' ? newCount : newCount * product.itemSize;
     if (AppFinance.toInternal(product.qty) < AppFinance.toInternal(prosMathQty)) {
         const lang = document.documentElement.lang || 'en';
-        alert(lang === 'ar' ? '❌ لا يوجد مخزون كافي!' : '❌ Insufficient stock!');
+        customAlert(lang === 'ar' ? '❌ لا يوجد مخزون كافي!' : '❌ Insufficient stock!'); // [FIX-2]
         return;
     }
 
@@ -3943,8 +3985,9 @@ document.getElementById('product-camera-input').addEventListener('change', funct
             const base64 = canvas.toDataURL('image/jpeg', 0.6); // 60% quality compression
             const product = state.products.find(p => p.id === currentImageProductId);
             if (product) {
-                product.image = base64;
-                saveState();
+                product.image = base64; // keep in runtime memory for immediate render
+                localStorage.setItem('animal_land_img_' + currentImageProductId, base64); // [FIX-3 FINAL] separate key — not serialized into main DB
+                saveState(); // saveState() strips images from serialized copy — main DB stays lean
             }
             currentImageProductId = null;
         };
