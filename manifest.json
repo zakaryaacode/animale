@@ -1,0 +1,25 @@
+{
+  "name": "Animal Land Pro Dashboard",
+  "short_name": "Animal Land",
+  "description": "Premium Inventory and Sales Management for Animal Land",
+  "id": "animal-land-pro",
+  "scope": "./",
+  "start_url": "index.html",
+  "display": "standalone",
+  "background_color": "#f8fafc",
+  "theme_color": "#0d9488",
+  "orientation": "any",
+  "icons": [
+    {
+      "src": "logo.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "logo.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}

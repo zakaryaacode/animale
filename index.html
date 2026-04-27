@@ -1,0 +1,1112 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport"
+        content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=0, viewport-fit=cover">
+    <title>Animal Land Pro | Personal Business Dashboard</title>
+    <!-- Google Fonts: Inter -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://unpkg.com/html5-qrcode"></script>
+
+    <!-- PWA Settings -->
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#0d9488">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <link rel="apple-touch-icon" href="logo.png">
+
+
+    <link rel="stylesheet" href="assets/css/style.css">
+</head>
+
+<body>
+
+    <div class="fixed-bg"></div>
+
+    <!-- Mobile Top Header -->
+    <div class="mobile-top-bar">
+        <div class="mobile-logo-group">
+            <span>Animal Land Pro</span>
+        </div>
+        <button class="menu-trigger" onclick="document.getElementById('sidebar').classList.toggle('mobile-open')">
+            <i data-lucide="menu"></i>
+        </button>
+    </div>
+
+    <!-- Sidebar -->
+    <aside id="sidebar">
+        <div class="logo">
+            <span>Animal Land Pro</span>
+            <button class="theme-toggle-btn mobile-only"
+                onclick="document.getElementById('sidebar').classList.remove('mobile-open')"
+                style="margin-inline-start: auto; display: none;">
+                <i data-lucide="x"></i>
+            </button>
+        </div>
+        <nav>
+            <a class="nav-item active" onclick="switchView('dashboard', this)">
+                <i data-lucide="layout-dashboard"></i> <span data-i18n="nav_dashboard">Dashboard</span>
+            </a>
+            <a class="nav-item" onclick="switchView('inventory', this)">
+                <i data-lucide="package"></i> <span data-i18n="nav_inventory">Inventory</span>
+            </a>
+            <a class="nav-item" onclick="switchView('pos', this)"
+                style="border-radius: 0.5rem; background: var(--primary); color: white; margin: 0.5rem 0.75rem; padding: 0.85rem; justify-content: center; font-weight: bold; box-shadow: 0 4px 15px rgba(13,148,136,0.25);">
+                <i data-lucide="scan" style="width: 22px; height: 22px;"></i> <span data-i18n="nav_pos">POS
+                    Scanner</span>
+            </a>
+            <a class="nav-item" onclick="switchView('sales', this)">
+                <i data-lucide="shopping-cart"></i> <span data-i18n="nav_sales">Sales</span>
+            </a>
+            <a class="nav-item" onclick="switchView('expenses', this)">
+                <i data-lucide="receipt"></i> <span data-i18n="nav_expenses">Expenses</span>
+            </a>
+            <a class="nav-item" onclick="switchView('analytics', this)">
+                <i data-lucide="line-chart"></i> <span data-i18n="nav_analytics">Product Analytics</span>
+            </a>
+            <a class="nav-item" onclick="switchView('credits', this)">
+                <i data-lucide="book"></i> <span data-i18n="nav_credits">Credits (Debt)</span>
+            </a>
+            <a class="nav-item" onclick="switchView('reports', this)">
+                <i data-lucide="file-text"></i> <span data-i18n="nav_reports">Financial Reports</span>
+            </a>
+            <a class="nav-item" onclick="switchView('trash', this)">
+                <i data-lucide="trash-2"></i> <span data-i18n="nav_trash">Recycle Bin</span>
+            </a>
+            <!-- System Tools -->
+            <div
+                style="margin-top: 1rem; padding-top: 1rem; border-top: 1px solid rgba(255,255,255,0.3); display: flex; flex-direction: column; gap: 0.5rem;">
+                <a class="nav-item" onclick="exportData()" style="color: var(--secondary);">
+                    <i data-lucide="download-cloud"></i> <span>Export Backup</span>
+                </a>
+                <a class="nav-item" onclick="document.getElementById('import-file').click()"
+                    style="color: var(--primary);">
+                    <i data-lucide="upload-cloud"></i> <span>Import Backup</span>
+                    <input type="file" id="import-file" hidden accept=".json" onchange="importData(event)">
+                </a>
+            </div>
+        </nav>
+
+        <div class="pwa-install-container">
+            <button id="pwa-install-btn">
+                <i data-lucide="download"></i> <span data-i18n="btn_install">Install App</span>
+            </button>
+        </div>
+
+    </aside>
+
+    <!-- Main Content -->
+    <main>
+        <header>
+            <div style="display: flex; flex-direction: column; gap: 0.25rem;">
+                <h1 id="view-title">Dashboard Overview</h1>
+                <div id="date-display" style="color: var(--text-muted); font-size: 0.9rem;"></div>
+            </div>
+            <div class="header-actions">
+                <button class="theme-toggle-btn" id="lang-toggle" title="تغيير اللغة / Changer de langue">
+                    <i data-lucide="globe"></i> <span id="current-lang-text"
+                        style="font-size: 0.9rem; font-weight: 600; margin-left: 5px;">AR</span>
+                </button>
+                <button class="theme-toggle-btn" id="privacy-toggle-btn" title="Privacy Mode"
+                    onclick="handlePrivacyToggle()" style="position:relative;">
+                    <i data-lucide="eye-off" id="privacy-icon"></i>
+                </button>
+                <button class="theme-toggle-btn" id="theme-toggle" title="Toggle Dark/Light Mode">
+                    <i data-lucide="sun" id="theme-icon"></i>
+                </button>
+                <button class="theme-toggle-btn" onclick="location.reload()" title="Refresh App / تحديث التطبيق">
+                    <i data-lucide="refresh-cw"></i>
+                </button>
+            </div>
+        </header>
+
+        <!-- Dynamic Stats (Global) -->
+        <div class="stats-grid" id="global-stats">
+            <div class="stat-card">
+                <span class="label" data-i18n="stat_revenue">Total Revenue</span>
+                <span class="value privacy-value" id="stat-revenue">0 DA</span>
+                <span class="lock-badge"><i data-lucide="lock"
+                        style="width: 14px; height: 14px; stroke-width: 3px; color: var(--primary);"></i></span>
+            </div>
+            <div class="stat-card expense">
+                <span class="label" data-i18n="stat_expenses">Total Expenses</span>
+                <span class="value privacy-value" id="stat-expenses">0 DA</span>
+                <span class="lock-badge"><i data-lucide="lock"
+                        style="width: 14px; height: 14px; stroke-width: 3px; color: var(--primary);"></i></span>
+            </div>
+            <div class="stat-card profit">
+                <span class="label" data-i18n="stat_profit">Net Profit</span>
+                <span class="value privacy-value" id="stat-profit">0 DA</span>
+                <span class="lock-badge"><i data-lucide="lock"
+                        style="width: 14px; height: 14px; stroke-width: 3px; color: var(--primary);"></i></span>
+            </div>
+            <div class="stat-card profit">
+                <span class="label" data-i18n="stat_profit_today">Today's Profit</span>
+                <span class="value privacy-value" id="stat-profit-today">0 DA</span>
+                <span class="lock-badge"><i data-lucide="lock"
+                        style="width: 14px; height: 14px; stroke-width: 3px; color: var(--primary);"></i></span>
+            </div>
+            <div class="stat-card profit">
+                <span class="label" data-i18n="stat_profit_month">30 Days Profit</span>
+                <span class="value privacy-value" id="stat-profit-month">0 DA</span>
+                <span class="lock-badge"><i data-lucide="lock"
+                        style="width: 14px; height: 14px; stroke-width: 3px; color: var(--primary);"></i></span>
+            </div>
+        </div>
+
+        <!-- Privacy Modal -->
+        <div id="privacy-modal">
+            <div class="privacy-modal-box">
+                <!-- Lock Ring Icon -->
+                <div class="pm-lock-ring" id="pm-lock-ring">
+                    <i data-lucide="lock"></i>
+                </div>
+
+                <!-- Title -->
+                <div class="pm-title" id="privacy-modal-title">Unlock Financial Data</div>
+                <div class="pm-sub" id="privacy-modal-sub">Enter your PIN to continue</div>
+
+                <!-- PIN Dots -->
+                <div class="pm-dots" id="pm-dots"></div>
+
+                <!-- Error -->
+                <div class="pm-error" id="privacy-error"></div>
+
+                <!-- Biometric Button -->
+                <button id="privacy-biometric-btn" onclick="privacyBiometricUnlock()">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none"
+                        stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M12 10a2 2 0 0 0-2 2c0 1.02-.1 2.51-.26 4" />
+                        <path d="M14 13.12c0 2.38 0 6.38-1 8.88" />
+                        <path d="M17.29 21.02c.12-.6.43-2.3.5-3.02" />
+                        <path d="M2 12a10 10 0 0 1 18-6" />
+                        <path d="M2 16h.01" />
+                        <path d="M21.8 16c.2-2 .131-5.354 0-6" />
+                        <path d="M5 19.5C5.5 18 6 15 6 12a6 6 0 0 1 .34-2" />
+                        <path d="M8.65 22c.21-.66.45-1.32.57-2" />
+                        <path d="M9 6.8a6 6 0 0 1 9 5.2v2" />
+                    </svg>
+                    Face ID / Fingerprint
+                </button>
+
+                <!-- Numpad -->
+                <div class="pm-numpad" id="pm-numpad">
+                    <button class="pm-key" onclick="pmKey('1')">1</button>
+                    <button class="pm-key" onclick="pmKey('2')">2</button>
+                    <button class="pm-key" onclick="pmKey('3')">3</button>
+                    <button class="pm-key" onclick="pmKey('4')">4</button>
+                    <button class="pm-key" onclick="pmKey('5')">5</button>
+                    <button class="pm-key" onclick="pmKey('6')">6</button>
+                    <button class="pm-key" onclick="pmKey('7')">7</button>
+                    <button class="pm-key" onclick="pmKey('8')">8</button>
+                    <button class="pm-key" onclick="pmKey('9')">9</button>
+                    <button class="pm-key pm-key-del" onclick="pmDel()">⌫</button>
+                    <button class="pm-key" onclick="pmKey('0')">0</button>
+                    <button class="pm-key pm-key-ok" onclick="privacySubmit()">✓</button>
+                </div>
+
+                <!-- Footer Links -->
+                <div class="pm-footer">
+                    <span class="pm-footer-link" id="privacy-reset-link" onclick="privacyResetPIN()"
+                        style="display:none;">Forgot PIN?</span>
+                    <span class="pm-footer-link" onclick="closePrivacyModal()">Cancel</span>
+                </div>
+
+                <!-- Hidden real input for logic -->
+                <input type="password" id="privacy-pin-input" maxlength="8" autocomplete="off"
+                    style="position:absolute;opacity:0;pointer-events:none;">
+            </div>
+        </div>
+
+        <!-- Recovery Code Overlay -->
+        <div id="recovery-overlay">
+            <div class="recovery-box" id="recovery-box-content">
+                <!-- Content injected by JS -->
+            </div>
+        </div>
+
+
+        <!-- Custom UI Modals -->
+        <div id="custom-alert-modal" class="custom-prompt-modal-style">
+            <div class="cp-box">
+                <div class="cp-title" id="ca-title">Alert</div>
+                <div class="cp-actions">
+                    <button class="cp-btn-confirm" id="ca-btn-confirm">OK</button>
+                </div>
+            </div>
+        </div>
+
+        <div id="custom-confirm-modal" class="custom-prompt-modal-style">
+            <div class="cp-box">
+                <div class="cp-title" id="cc-title">Confirm</div>
+                <div class="cp-actions">
+                    <button class="cp-btn-cancel" id="cc-btn-cancel">Cancel</button>
+                    <button class="cp-btn-confirm" id="cc-btn-confirm">Yes</button>
+                </div>
+            </div>
+        </div>
+
+        <div id="custom-prompt-modal" class="custom-prompt-modal-style">
+            <div class="cp-box">
+                <div class="cp-title" id="cp-title">Enter Quantity</div>
+
+                <div class="cp-unit-toggle">
+                    <button class="cp-unit-btn active" id="btn-unit-g">Grams (g)</button>
+                    <button class="cp-unit-btn" id="btn-unit-kg">Kilos (kg)</button>
+                </div>
+
+                <div style="text-align: left; margin-bottom: 1.25rem;">
+                    <label
+                        style="font-size: 0.8rem; color: var(--text-muted); font-weight: 700; margin-bottom: 0.4rem; display: block;"
+                        id="qty-label-modal">Quantity (g)</label>
+                    <input type="number" class="cp-input" id="cp-input-grams" inputmode="decimal" step="any"
+                        autocomplete="off" placeholder="0" style="margin-bottom: 0;">
+                </div>
+
+                <div style="text-align: left; margin-bottom: 1.5rem;">
+                    <label
+                        style="font-size: 0.8rem; color: var(--text-muted); font-weight: 700; margin-bottom: 0.4rem; display: block;">Amount
+                        (DA / ثمن)</label>
+                    <input type="number" class="cp-input" id="cp-input-amount" inputmode="decimal" step="any"
+                        autocomplete="off" placeholder="0 DA" style="margin-bottom: 0;">
+                </div>
+
+                <div class="cp-actions">
+                    <button class="cp-btn-cancel" id="cp-btn-cancel">Cancel</button>
+                    <button class="cp-btn-confirm" id="cp-btn-confirm">Confirm</button>
+                </div>
+            </div>
+        </div>
+
+        <div id="custom-return-modal" class="custom-prompt-modal-style">
+            <div class="cp-box">
+                <div class="cp-title" id="cr-title-text" data-i18n="btn_return_sale">Return Product</div>
+
+                <div class="return-info-box"
+                    style="background: rgba(13,148,136,0.05); padding: 1rem; border-radius: 0.75rem; margin-bottom: 1.25rem; text-align: left; border: 1px dashed var(--primary);">
+                    <div style="font-size: 0.8rem; color: var(--text-muted);" id="ret-product-name">Product Name</div>
+                    <div style="font-weight: bold; font-size: 1rem;" id="ret-max-qty">Original Qty: 0</div>
+                </div>
+
+                <div style="text-align: left; margin-bottom: 1.25rem;">
+                    <label
+                        style="font-size: 0.8rem; color: var(--text-muted); font-weight: 700; margin-bottom: 0.4rem; display: block;"
+                        data-i18n="lbl_qty">Return Quantity</label>
+                    <input type="number" class="cp-input" id="ret-input-qty" inputmode="decimal" step="any"
+                        autocomplete="off" placeholder="0" style="margin-bottom: 0;">
+                    <div id="ret-qty-error"
+                        style="color: var(--danger); font-size: 0.75rem; margin-top: 0.25rem; display: none;">Quantity
+                        exceeds original sale!</div>
+                </div>
+
+                <div style="text-align: left; margin-bottom: 1.5rem;">
+                    <label
+                        style="font-size: 0.8rem; color: var(--text-muted); font-weight: 700; margin-bottom: 0.4rem; display: block;">Refund
+                        Amount (DA / مبلغ الإرجاع)</label>
+                    <div id="ret-refund-amount" style="font-size: 1.5rem; font-weight: 800; color: var(--primary);">0 DA</div>
+                </div>
+
+                <div class="cp-actions">
+                    <button class="cp-btn-cancel" id="ret-btn-cancel">Cancel</button>
+                    <button class="cp-btn-confirm" id="ret-btn-confirm" style="background: var(--danger);">Confirm
+                        Return</button>
+                </div>
+            </div>
+        </div>
+
+
+
+        <!-- Dashboard View -->
+        <section id="dashboard-view" class="view-section active">
+            <div class="dashboard-content">
+                <div class="card-container">
+                    <div class="card-header">
+                        <h2>Profit Trend</h2>
+                    </div>
+                    <div style="height: 300px;">
+                        <canvas id="profitChart"></canvas>
+                    </div>
+                </div>
+                <div class="card-container">
+                    <div class="card-header">
+                        <h2>Low Stock Alerts</h2>
+                    </div>
+                    <div class="table-responsive">
+                        <table id="low-stock-table">
+                            <thead>
+                                <tr>
+                                    <th>Product</th>
+                                    <th>Qty</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <!-- JS Populated -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- POS Scanner View -->
+        <section id="pos-view" class="view-section">
+            <div class="dashboard-content" style="grid-template-columns: 1fr;">
+                <div class="card-container" style="border: 2px solid var(--primary);">
+                    <div class="card-header"
+                        style="justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border); padding-bottom: 1rem; margin-bottom: 1.5rem;">
+                        <h2 data-i18n="title_pos">Point of Sale (Scanner)</h2>
+                        <div style="display: flex; gap: 0.5rem;">
+                            <button class="btn-primary" onclick="startCameraScanner()" id="btn-start-scanner"
+                                style="width: auto; padding: 0.5rem 1rem;">
+                                <i data-lucide="camera"></i> Camera
+                            </button>
+                            <button class="btn-primary" onclick="stopCameraScanner()" id="btn-stop-scanner"
+                                style="display: none; width: auto; padding: 0.5rem 1rem; background: var(--danger);">
+                                <i data-lucide="x-circle"></i> Stop
+                            </button>
+                        </div>
+                    </div>
+
+                    <div id="qr-reader-container"
+                        style="display: none; margin-bottom: 1rem; width: 100%; max-width: 500px; margin-inline: auto; border-radius: 1rem; overflow: hidden; border: 2px solid var(--primary); background: #000;">
+                        <div id="qr-reader" style="width:100%;"></div>
+                    </div>
+
+                    <div style="position: relative;">
+                        <!-- Global listener fallback -->
+                        <div style="display: flex; gap: 0.5rem; align-items: stretch;">
+                            <input type="text" id="pos-barcode-input" placeholder="Scan or Type Barcode + Enter"
+                                autocomplete="off"
+                                style="font-size: 1.1rem; padding: 1rem; border-color: var(--primary); font-family: monospace;">
+                            <button class="btn-primary"
+                                onclick="handlePosScan(document.getElementById('pos-barcode-input').value)"
+                                style="width: 70px;">
+                                <i data-lucide="download"></i>
+                            </button>
+                        </div>
+                    </div>
+
+
+                    <div class="table-responsive"
+                        style="margin-top: 1.5rem; border: 1px solid var(--border); border-radius: 0.75rem;">
+                        <table id="pos-cart-table">
+                            <thead style="background: rgba(13,148,136,0.05);">
+                                <tr>
+                                    <th>Item & Barcode</th>
+                                    <th>Price</th>
+                                    <th style="text-align: center;">Qty (Items)</th>
+                                    <th>Total</th>
+                                    <th style="width: 60px;"></th>
+                                </tr>
+                            </thead>
+                            <tbody id="pos-cart-list">
+                                <tr>
+                                    <td colspan="5"
+                                        style="text-align: center; color: var(--text-muted); padding: 3rem 1rem;">
+                                        <i data-lucide="scan-face"
+                                            style="width: 48px; height: 48px; margin-bottom: 1rem; opacity: 0.3;"></i><br>
+                                        <strong style="font-size: 1.2rem;">Cart is empty.</strong><br>Scan barcode to
+                                        begin...
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <!-- Checkout Box -->
+                    <div
+                        style="background: linear-gradient(135deg, rgba(13,148,136,0.1), rgba(13,148,136,0.02)); padding: 1.5rem; border-radius: 1rem; margin-top: 1.5rem; border: 2px solid var(--primary); display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 1rem;">
+                        <div>
+                            <h3
+                                style="margin: 0; color: var(--primary); font-size: 1rem; text-transform: uppercase; letter-spacing: 1px;">
+                                Grand Total</h3>
+                            <div id="pos-grand-total"
+                                style="font-size: 2.2rem; font-weight: 800; color: var(--text-main); font-variant-numeric: tabular-nums;">
+                                0 DA</div>
+                        </div>
+                        <button class="btn-primary" onclick="posCheckout()"
+                            style="font-size: 1.2rem; padding: 1rem 2.5rem; border-radius: 1rem; width: auto; box-shadow: 0 10px 20px rgba(13,148,136,0.3);">
+                            <i data-lucide="check-circle"></i> Confirm Sale
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Inventory View -->
+        <section id="inventory-view" class="view-section">
+            <div class="dashboard-content">
+                <div class="card-container">
+                    <div class="card-header" style="flex-wrap: wrap; gap: 1rem;">
+                        <h2 data-i18n="hd_product_list">Product List</h2>
+                        <input type="text" id="inventory-search" placeholder="Search product or barcode..."
+                            data-i18n-placeholder="ph_search_product"
+                            style="max-width: 300px; padding: 0.5rem; border-radius: 0.5rem; border: 1px solid var(--border);">
+                    </div>
+                    <div class="table-responsive desktop-only">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th style="width: 50px;">📸</th>
+                                    <th data-i18n="th_product">Product Name</th>
+                                    <th data-i18n="th_qty">Quantity</th>
+                                    <th>Cost / Price</th>
+                                    <th data-i18n="th_action">Action</th>
+                                </tr>
+                            </thead>
+                            <tbody id="inventory-list"></tbody>
+                        </table>
+                    </div>
+                    <!-- Mobile Cards -->
+                    <div class="mobile-cards-list" id="inventory-cards-list"></div>
+                </div>
+                <div class="card-container">
+                    <div class="card-header">
+                        <h2 data-i18n="hd_add_product">Add Product</h2>
+                    </div>
+                    <form id="product-form">
+                        <div class="form-group" style="display: grid; grid-template-columns: 2fr 1.2fr; gap: 1rem;">
+                            <div>
+                                <label data-i18n="lbl_product_name">Product Name</label>
+                                <input type="text" id="p-name" placeholder="e.g. Dog Food Bulk"
+                                    data-i18n-placeholder="placeholder_dog_food" required
+                                    oninput="checkDuplicateProduct()">
+                            </div>
+                            <div style="flex: 1;">
+                                <label data-i18n="lbl_barcode">Barcode (Primary)</label>
+                                <div style="display: flex; gap: 0.5rem; align-items: center;">
+                                    <input type="text" id="p-barcode-main" placeholder="Scan or enter..."
+                                        style="margin-bottom: 0;" oninput="checkDuplicateProduct()">
+                                    <button type="button" class="btn-primary" onclick="openBarcodeModal()"
+                                        style="padding: 0.75rem; border-radius: 0.75rem; width: auto; background: var(--secondary);">
+                                        <i data-lucide="plus"></i>
+                                    </button>
+                                </div>
+                                <div id="duplicate-warning"
+                                    style="display:none; margin-top:0.4rem; padding:0.5rem; background:rgba(251,191,36,0.1); border:1px solid #fbbf24; border-radius:0.5rem; font-size:0.8rem; color:#b45309;">
+                                    ⚠️ <span id="duplicate-msg">This product exists!</span>
+                                    <button type="button" id="duplicate-restock-btn"
+                                        style="background:var(--primary); color:white; border:none; padding:0.2rem 0.5rem; border-radius:0.3rem; cursor:pointer; margin-left:0.5rem;">Restock</button>
+                                </div>
+                                <div id="barcode-badge-summary"
+                                    style="margin-top: 0.4rem; font-size: 0.8rem; color: var(--success); font-weight: bold; display: none;">
+                                    <i data-lucide="check-circle"
+                                        style="width:14px; height:14px; vertical-align: middle;"></i>
+                                    <span id="barcode-count-text">0 extra barcodes added</span>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="form-group" style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+                            <div>
+                                <label data-i18n="lbl_num_bags">Number of Bags/Items</label>
+                                <input type="number" id="p-bags" min="1" required>
+                            </div>
+                            <div id="size-input-container" style="display: none;">
+                                <label data-i18n="lbl_size_bag">Size per Bag/Item</label>
+                                <input type="number" step="0.001" id="p-size" min="0.001" required>
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label data-i18n="lbl_unit_size">Unit for Size</label>
+                            <select id="p-unit" required onchange="handleUnitChange()">
+                                <option value="pcs" data-i18n="opt_pcs">Piece (Pcs)</option>
+                                <option value="g" data-i18n="opt_g">Gram (g)</option>
+                                <option value="kg" data-i18n="opt_kg">Kilogram (kg)</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label data-i18n="lbl_total_cost">Total Batch Cost (DA)</label>
+                            <input type="number" step="0.01" id="p-total-cost" required>
+                        </div>
+                        <div class="form-group" style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+                            <div>
+                                <label data-i18n="lbl_sell_price_bag">Selling Price for One Bag/Unit (DA)</label>
+                                <input type="number" step="0.01" id="p-sell-price" required>
+                            </div>
+                            <div id="kg-price-container" style="display: none;">
+                                <label data-i18n="lbl_price_per_kg">Price per 1kg (DA)</label>
+                                <input type="number" step="0.01" id="p-price-kg">
+                            </div>
+                        </div>
+
+                        <!-- Optional Bulk Promo Section -->
+                        <div class="card-container"
+                            style="background: rgba(13,148,136,0.05); border: 1px dashed var(--primary); margin-top: 1rem; padding: 1rem;">
+                            <div
+                                style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.5rem;">
+                                <label style="font-weight: 700; color: var(--primary); margin: 0;">تفعيل عرض الجملة
+                                    (Bulk Promo)</label>
+                                <label class="switch">
+                                    <input type="checkbox" id="p-promo-toggle"
+                                        onchange="document.getElementById('promo-manager').style.display = this.checked ? 'block' : 'none'">
+                                    <span class="slider round"></span>
+                                </label>
+                            </div>
+                            <div id="promo-manager" style="display: none;">
+                                <div id="promo-list-container" class="promo-list">
+                                    <!-- Promo rows added dynamically -->
+                                </div>
+                                <button type="button" class="btn-add-promo" onclick="addPromoRow()">
+                                    <i data-lucide="plus"></i> إضافة عرض آخر (Add Tier)
+                                </button>
+                            </div>
+                        </div>
+                        <button type="submit" class="btn-primary">
+                            <i data-lucide="plus-circle"></i> <span data-i18n="btn_add_stock">Add to Stock</span>
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </section>
+
+        <!-- Sales View -->
+        <section id="sales-view" class="view-section">
+            <div class="dashboard-content">
+                <div class="card-container">
+                    <div class="card-header">
+                        <h2 data-i18n="hd_recent_sales">Recent Sales</h2>
+                    </div>
+                    <div class="table-responsive">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th data-i18n="th_date">Date</th>
+                                    <th data-i18n="th_product">Product</th>
+                                    <th data-i18n="th_qty">Qty</th>
+                                    <th data-i18n="th_total">Total</th>
+                                    <th data-i18n="th_action">Action</th>
+                                </tr>
+                            </thead>
+                            <tbody id="sales-list"></tbody>
+                        </table>
+                    </div>
+                </div>
+                <div class="card-container">
+                    <div class="card-header">
+                        <h2 data-i18n="hd_new_sale">New Sale</h2>
+                    </div>
+                    <form id="sale-form" novalidate>
+
+                        <!-- Past Sale toggle -->
+                        <div style="display:flex; align-items:center; gap:0.5rem; margin-bottom:0.6rem;">
+                            <input type="checkbox" id="s-is-past" style="width:auto;"
+                                onchange="document.getElementById('s-date-container').style.display=this.checked?'block':'none'">
+                            <label for="s-is-past" style="margin:0; cursor:pointer; font-size:0.85rem;">📅 تسجيل مبيعة
+                                قديمة (بدون خصم مخزن)</label>
+                        </div>
+                        <div id="s-date-container" style="display:none; margin-bottom:0.8rem;">
+                            <label style="font-size:0.82rem; color:var(--text-muted);">التاريخ</label>
+                            <input type="date" id="s-date">
+                        </div>
+
+                        <!-- Product selector -->
+                        <div class="form-group">
+                            <label>المنتج / Product</label>
+                            <div class="select-filter-container">
+                                <input type="text" id="s-product-filter" class="select-filter-input"
+                                    placeholder="ابحث عن منتج..." oninput="filterSalesDropdown(this.value)">
+                                <i data-lucide="search" class="select-filter-icon" style="width:16px;"></i>
+                            </div>
+                            <div class="field-with-scan">
+                                <select id="s-product" onchange="onSaleProductChange(this.value)">
+                                    <option value="">-- اختر منتج --</option>
+                                </select>
+                                <button type="button" class="btn-scan-field" onclick="openGlobalScanner('s-product')">
+                                    <i data-lucide="camera"></i>
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Custom item fields -->
+                        <div id="custom-product-group"
+                            style="display:none; background:rgba(13,148,136,0.06); border:1px dashed var(--primary); border-radius:0.5rem; padding:0.8rem; margin-bottom:0.8rem;">
+                            <p style="font-weight:600; color:var(--primary); margin:0 0 0.5rem;">✍️ بيانات المنتج
+                                الخارجي</p>
+                            <input type="text" id="s-custom-name" placeholder="اسم المنتج..."
+                                style="margin-bottom:0.5rem;">
+                            <div style="display:grid; grid-template-columns:1fr 1fr; gap:0.5rem;">
+                                <div>
+                                    <label style="font-size:0.78rem; color:var(--text-muted);">الوحدة</label>
+                                    <select id="s-custom-unit">
+                                        <option value="pcs">قطعة</option>
+                                        <option value="kg">كيلوغرام</option>
+                                        <option value="g">غرام</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label style="font-size:0.78rem; color:var(--text-muted);">سعر القطعة/الكيلو
+                                        (DA)</label>
+                                    <input type="number" id="s-custom-price" step="0.01" placeholder="0.00"
+                                        oninput="onSaleQtyInput()">
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Sale mode for kg/g products -->
+                        <div id="sale-mode-group" style="display:none;" class="form-group">
+                            <label>طريقة البيع</label>
+                            <div class="radio-group-flex">
+                                <label><input type="radio" name="sale-mode" value="qty" checked
+                                        onchange="toggleSaleMode('qty')"> بالكمية</label>
+                                <label><input type="radio" name="sale-mode" value="gram"
+                                        onchange="toggleSaleMode('gram')"> بالغرام</label>
+                                <label><input type="radio" name="sale-mode" value="amt"
+                                        onchange="toggleSaleMode('amt')"> بالمبلغ</label>
+                            </div>
+                        </div>
+
+                        <!-- Qty & amount -->
+                        <div class="form-group">
+                            <label id="qty-label">الكمية / Quantity</label>
+                            <input type="number" id="s-qty" step="0.001" min="0" placeholder="0"
+                                oninput="onSaleQtyInput()">
+                        </div>
+                        <div class="form-group" id="amt-input-group" style="display:none;">
+                            <label>المبلغ (DA)</label>
+                            <input type="number" id="s-amount" step="0.01" min="0" placeholder="0.00"
+                                oninput="onSaleQtyInput()">
+                        </div>
+
+                        <!-- Live preview -->
+                        <div id="sale-total-preview"
+                            style="display:none; margin-bottom:1rem; padding:0.6rem; border-radius:0.5rem; background:rgba(13,148,136,0.08); font-weight:600; color:var(--primary);">
+                        </div>
+
+                        <button type="submit" class="btn-primary">
+                            <i data-lucide="shopping-bag"></i> تسجيل البيع
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </section>
+
+        <!-- Expenses View -->
+        <section id="expenses-view" class="view-section">
+            <div class="dashboard-content">
+                <div class="card-container">
+                    <div class="card-header">
+                        <h2 data-i18n="hd_expenses_log">Expenses Log</h2>
+                    </div>
+                    <div class="table-responsive">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th data-i18n="th_date">Date</th>
+                                    <th data-i18n="th_desc">Description</th>
+                                    <th data-i18n="th_amount">Amount</th>
+                                    <th data-i18n="th_action">Action</th>
+                                </tr>
+                            </thead>
+                            <tbody id="expenses-list"></tbody>
+                        </table>
+                    </div>
+                </div>
+                <div class="card-container">
+                    <div class="card-header">
+                        <h2 data-i18n="hd_add_expense">Add Expense</h2>
+                    </div>
+                    <form id="expense-form">
+                        <div class="form-group">
+                            <label data-i18n="th_desc">Description</label>
+                            <input type="text" id="e-desc" placeholder="e.g. Electricity bill"
+                                data-i18n="placeholder_elec" required>
+                        </div>
+                        <div class="form-group">
+                            <label data-i18n="lbl_amount">Amount (DA)</label>
+                            <input type="number" step="0.01" id="e-amount" required>
+                        </div>
+                        <button type="submit" class="btn-primary">
+                            <i data-lucide="minus-circle"></i> <span data-i18n="btn_save_expense">Save Expense</span>
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </section>
+
+        <!-- Credits View -->
+        <section id="credits-view" class="view-section">
+            <div class="stats-grid" style="margin-bottom: 1.5rem;">
+                <div class="stat-card expense">
+                    <span class="label" data-i18n="stat_total_credit">Total Unpaid Credit</span>
+                    <span class="value" id="stat-total-credit">0.00 DA</span>
+                </div>
+                <div class="stat-card profit">
+                    <span class="label" data-i18n="stat_credit_profit">Expected Net Profit</span>
+                    <span class="value" id="stat-credit-profit">0.00 DA</span>
+                </div>
+            </div>
+
+            <div class="dashboard-content">
+                <div class="card-container">
+                    <div class="card-header" style="flex-wrap: wrap; gap: 1rem;">
+                        <h2 data-i18n="hd_unpaid_credits">Unpaid Credits</h2>
+                        <input type="text" id="credit-search" placeholder="Search Customer..."
+                            data-i18n-placeholder="ph_search_customer"
+                            style="max-width: 250px; padding: 0.5rem; border-radius: 0.5rem; border: 1px solid var(--border);">
+                    </div>
+                    <div class="table-responsive">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th data-i18n="th_date">Date</th>
+                                    <th data-i18n="th_customer">Customer</th>
+                                    <th data-i18n="th_product">Product</th>
+                                    <th data-i18n="th_total">Total</th>
+                                    <th data-i18n="th_action">Action</th>
+                                </tr>
+                            </thead>
+                            <tbody id="credits-list"></tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div class="card-container">
+                    <div class="card-header">
+                        <h2 data-i18n="hd_new_credit">Record Credit Sale</h2>
+                    </div>
+                    <form id="credit-form">
+                        <div class="form-group">
+                            <label data-i18n="lbl_customer_name">Customer Name</label>
+                            <input type="text" id="cr-customer" placeholder="e.g. Ahmed..."
+                                data-i18n-placeholder="ph_customer_name" required>
+                        </div>
+                        <div class="form-group"
+                            style="margin-bottom: 1rem; display: flex; align-items: center; gap: 0.5rem;">
+                            <input type="checkbox" id="cr-is-past"
+                                onchange="document.getElementById('cr-date-container').style.display = this.checked ? 'block' : 'none';"
+                                style="width: auto;">
+                            <label for="cr-is-past" style="margin: 0; cursor: pointer;"
+                                data-i18n="lbl_record_past">Record as Past Sale</label>
+                        </div>
+                        <div class="form-group" id="cr-date-container" style="display: none; margin-bottom: 1rem;">
+                            <label data-i18n="lbl_past_date">Select Past Date</label>
+                            <input type="date" id="cr-date">
+                        </div>
+                        <div class="form-group">
+                            <label data-i18n="lbl_product">Product</label>
+                            <select id="cr-product" required>
+                                <option value="" data-i18n="sel_product">Select Product...</option>
+                            </select>
+                        </div>
+                        <div class="form-group" id="cr-sale-mode-group" style="display: none;">
+                            <label data-i18n="lbl_sale_mode">Sale Mode</label>
+                            <div class="radio-group-flex">
+                                <label>
+                                    <input type="radio" name="cr-sale-mode" value="qty" checked
+                                        onchange="toggleCrSaleMode('qty')">
+                                    <span data-i18n="lbl_by_qty">By Quantity</span>
+                                </label>
+                                <label>
+                                    <input type="radio" name="cr-sale-mode" value="gram"
+                                        onchange="toggleCrSaleMode('gram')">
+                                    <span data-i18n="lbl_by_gram">By Grams (g)</span>
+                                </label>
+                                <label>
+                                    <input type="radio" name="cr-sale-mode" value="amt"
+                                        onchange="toggleCrSaleMode('amt')">
+                                    <span data-i18n="lbl_by_amt">By Amount (DA)</span>
+                                </label>
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label id="cr-qty-label" data-i18n="lbl_qty">Quantity</label>
+                            <input type="number" id="cr-qty" step="0.001" min="0.001" required>
+                        </div>
+                        <div class="form-group" id="cr-amt-input-group" style="display: none;">
+                            <label data-i18n="lbl_amount">Amount (DA)</label>
+                            <input type="number" id="cr-amount" step="0.01" min="0.01">
+                        </div>
+                        <div id="cr-total-preview" style="margin-bottom: 1rem; font-weight: 600; color: var(--danger);">
+                        </div>
+                        <button type="submit" class="btn-primary" style="background: var(--danger);">
+                            <i data-lucide="book"></i> <span data-i18n="hd_new_credit">Record Credit Sale</span>
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </section>
+
+        <!-- Product Analytics View -->
+        <section id="analytics-view" class="view-section">
+            <div class="card-container" style="width: 100%;">
+                <div class="card-header">
+                    <h2 data-i18n="hd_synthesis">Product Synthesis & Profit Analysis</h2>
+                </div>
+                <div class="table-responsive">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th data-i18n="th_product">Product</th>
+                                <th data-i18n="th_current_stock">Current Stock</th>
+                                <th data-i18n="th_total_sold">Total Sold</th>
+                                <th data-i18n="th_total_invest">Total Investment</th>
+                                <th data-i18n="th_sell_price">Sell Price</th>
+                                <th data-i18n="th_total_rev">Total Revenue</th>
+                                <th data-i18n="th_net_profit">Net Profit</th>
+                            </tr>
+                        </thead>
+                        <tbody id="analytics-list"></tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+        <!-- Financial Reports View -->
+        <section id="reports-view" class="view-section">
+            <div class="dashboard-content">
+                <div class="card-container">
+                    <div class="card-header">
+                        <h2 data-i18n="hd_daily">Daily Report</h2>
+                    </div>
+                    <div class="table-responsive">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th data-i18n="th_date">Date</th>
+                                    <th data-i18n="th_total_rev">Total Revenue</th>
+                                    <th data-i18n="th_net_profit">Net Profit</th>
+                                </tr>
+                            </thead>
+                            <tbody id="daily-report-list"></tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div class="card-container">
+                    <div class="card-header">
+                        <h2 data-i18n="hd_monthly">Monthly Report</h2>
+                    </div>
+                    <div class="table-responsive">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th data-i18n="th_date">Month</th>
+                                    <th data-i18n="th_total_rev">Total Revenue</th>
+                                    <th data-i18n="th_net_profit">Net Profit</th>
+                                </tr>
+                            </thead>
+                            <tbody id="monthly-report-list"></tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div class="card-container">
+                    <div class="card-header">
+                        <h2 data-i18n="hd_yearly">Yearly Report</h2>
+                    </div>
+                    <div class="table-responsive">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th data-i18n="th_date">Year</th>
+                                    <th data-i18n="th_total_rev">Total Revenue</th>
+                                    <th data-i18n="th_net_profit">Net Profit</th>
+                                </tr>
+                            </thead>
+                            <tbody id="yearly-report-list"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Recycle Bin View -->
+        <section id="trash-view" class="view-section">
+            <div class="dashboard-content">
+                <div class="card-container">
+                    <div class="card-header">
+                        <h2 data-i18n="hd_deleted_products">Deleted Products</h2>
+                        <button class="delete-btn" onclick="emptyTrash('products')" title="Empty Product Trash">
+                            <i data-lucide="trash-2"></i> <span data-i18n="btn_clear">Clear</span>
+                        </button>
+                    </div>
+                    <div class="table-responsive">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th data-i18n="lbl_product_name">Product Name</th>
+                                    <th data-i18n="th_action">Action</th>
+                                </tr>
+                            </thead>
+                            <tbody id="trash-products-list"></tbody>
+                        </table>
+                    </div>
+                </div>
+                <div class="card-container">
+                    <div class="card-header">
+                        <h2 data-i18n="hd_deleted_others">Deleted Sales & Expenses</h2>
+                        <button class="delete-btn" onclick="emptyTrash('others')" title="Empty All Other Trash">
+                            <i data-lucide="trash-2"></i> <span data-i18n="btn_clear_all">Clear All</span>
+                        </button>
+                    </div>
+                    <div class="table-responsive">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th data-i18n="th_type">Type</th>
+                                    <th data-i18n="th_desc">Description/Product</th>
+                                    <th data-i18n="th_amount">Amount</th>
+                                    <th data-i18n="th_action">Action</th>
+                                </tr>
+                            </thead>
+                            <tbody id="trash-others-list"></tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div class="card-container" style="border: 2px dashed rgba(13, 148, 136, 0.4); margin-top: 1rem;">
+                    <div class="card-header">
+                        <h2 data-i18n="hd_backup">Database Backup & Restore</h2>
+                    </div>
+                    <p style="font-size: 0.9rem; color: var(--text-muted); margin-bottom: 1rem;">
+                        <strong style="color: var(--primary);" data-i18n="txt_backup_warn">Protect your data!</strong>
+                        <span data-i18n="txt_backup_desc">Download a backup file regularly. You can use it to restore
+                            all your sales and inventory if the state is accidentally cleared.</span>
+                    </p>
+                    <div style="display: flex; gap: 0.75rem; flex-wrap: wrap;">
+                        <button class="btn-primary" onclick="downloadBackup()">
+                            <i data-lucide="download-cloud"></i> <span data-i18n="btn_dl_backup">Download Backup</span>
+                        </button>
+                        <input type="file" id="db-upload" style="display: none;" accept=".json"
+                            onchange="restoreBackup(event)">
+                        <button class="btn-primary" style="background: var(--secondary);"
+                            onclick="document.getElementById('db-upload').click()">
+                            <i data-lucide="upload-cloud"></i> <span data-i18n="btn_restore_db">Restore DB</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <!-- Global Scanner Modal -->
+    <div id="global-scanner-modal">
+        <div class="scanner-header">
+            <span class="scanner-title">Scan Barcode / الكود بار</span>
+            <button class="scanner-close" onclick="closeGlobalScanner()"><i data-lucide="x"></i></button>
+        </div>
+        <div class="scanner-box">
+            <div id="global-qr-reader"></div>
+            <div class="scanner-guide"></div>
+        </div>
+        <div id="scanner-loading"
+            style="position: absolute; color: white; display: flex; flex-direction: column; align-items: center; gap: 1rem;">
+            <div class="spinner"></div>
+            <span>جاري تشغيل الكاميرا...</span>
+        </div>
+    </div>
+
+
+
+
+
+    <div id="print-receipt-container" style="display: none;"></div>
+
+    <!-- Professional Barcode Manager Modal -->
+    <div id="barcode-manager-modal">
+        <div class="b-modal-content animated-fade-in">
+            <div class="b-modal-header">
+                <div style="display:flex; align-items:center; gap:0.75rem;">
+                    <i data-lucide="barcode" style="width:24px; height:24px;"></i>
+                    <h3 style="margin:0; font-size:1.25rem;">Multi-Barcode Manager</h3>
+                </div>
+                <button class="scanner-close" onclick="closeBarcodeModal()" style="width:35px; height:35px;"><i
+                        data-lucide="x"></i></button>
+            </div>
+            <div class="b-modal-body" id="modal-barcode-list">
+                <!-- Barcode items will be added here -->
+            </div>
+            <div style="padding: 0 1.5rem 1.5rem 1.5rem;">
+                <button class="b-add-btn" onclick="addModalBarcodeRow()">
+                    <i data-lucide="plus-circle"></i> Add Another Barcode
+                </button>
+            </div>
+            <div class="b-modal-footer">
+                <button class="btn-primary" style="flex:1; background:var(--secondary);"
+                    onclick="openGlobalScanner(null)">
+                    <i data-lucide="camera"></i> Scan New
+                </button>
+                <button class="btn-primary" style="flex:1;" onclick="confirmBarcodeModal()">
+                    <i data-lucide="check"></i> Confirm List
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Hidden Camera Input -->
+    <input type="file" id="product-camera-input" accept="image/*" capture="environment" style="display:none">
+
+    <!-- ===== RETURN SALE MODAL ===== -->
+    <div id="return-modal-overlay" style="
+        display:none; position:fixed; inset:0; z-index:9999;
+        background:rgba(0,0,0,0.6); backdrop-filter:blur(6px);
+        align-items:center; justify-content:center;
+    ">
+        <div style="
+            background:var(--card-bg); border-radius:1.2rem;
+            padding:1.8rem; width:90%; max-width:380px;
+            box-shadow:0 20px 60px rgba(0,0,0,0.4);
+            border:1px solid rgba(255,255,255,0.08);
+            animation: slideUp 0.25s ease;
+        ">
+            <!-- Header -->
+            <div style="display:flex; align-items:center; gap:0.7rem; margin-bottom:1.2rem;">
+                <div
+                    style="background:rgba(239,68,68,0.15); border-radius:50%; width:44px; height:44px; display:flex; align-items:center; justify-content:center;">
+                    <i data-lucide="rotate-ccw" style="width:22px; height:22px; color:#ef4444;"></i>
+                </div>
+                <div>
+                    <h3 style="margin:0; font-size:1.1rem; color:var(--text);">تأكيد الإرجاع</h3>
+                    <p style="margin:0; font-size:0.78rem; color:var(--text-muted);">Return Confirmation</p>
+                </div>
+            </div>
+
+            <!-- Sale Info Card -->
+            <div
+                style="background:rgba(239,68,68,0.07); border:1px solid rgba(239,68,68,0.2); border-radius:0.8rem; padding:1rem; margin-bottom:1.2rem;">
+                <p id="return-modal-name"
+                    style="margin:0 0 0.6rem; font-weight:600; font-size:1rem; color:var(--text);"></p>
+                <div style="display:grid; grid-template-columns:1fr 1fr; gap:0.5rem;">
+                    <div style="background:rgba(0,0,0,0.1); border-radius:0.5rem; padding:0.5rem; text-align:center;">
+                        <p style="margin:0; font-size:0.72rem; color:var(--text-muted);">الكمية المُرجَعة</p>
+                        <p id="return-modal-qty"
+                            style="margin:0; font-weight:700; font-size:1.1rem; color:var(--primary);"></p>
+                    </div>
+                    <div style="background:rgba(0,0,0,0.1); border-radius:0.5rem; padding:0.5rem; text-align:center;">
+                        <p style="margin:0; font-size:0.72rem; color:var(--text-muted);">المبلغ المُسترجَع</p>
+                        <p id="return-modal-total" style="margin:0; font-weight:700; font-size:1.1rem; color:#ef4444;">
+                        </p>
+                    </div>
+                </div>
+                <p id="return-modal-stock-note"
+                    style="margin:0.6rem 0 0; font-size:0.8rem; color:var(--text-muted); text-align:center;"></p>
+            </div>
+
+            <!-- Actions -->
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:0.8rem;">
+                <button onclick="closeReturnModal()" style="
+                    padding:0.8rem; border-radius:0.7rem; border:1px solid var(--border);
+                    background:transparent; color:var(--text); font-size:0.95rem;
+                    cursor:pointer; transition:all 0.2s;
+                ">❌ إلغاء</button>
+                <button id="return-modal-confirm-btn" style="
+                    padding:0.8rem; border-radius:0.7rem; border:none;
+                    background:linear-gradient(135deg,#ef4444,#dc2626);
+                    color:white; font-weight:600; font-size:0.95rem;
+                    cursor:pointer; transition:all 0.2s;
+                ">✅ تأكيد الإرجاع</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="assets/js/main.js"></script>
+</body>
+
+</html>
